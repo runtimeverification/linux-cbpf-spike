@@ -1,0 +1,21 @@
+=== VM kernel (target) ===
+7.3.0-rc6-00063-g0c2669a9f4a1-dirty
+Linux virtme-ng 7.3.0-rc6-00063-g0c2669a9f4a1-dirty #2 SMP PREEMPT_DYNAMIC Thu Oct  8 15:42:19 MSK 2026 x86_64 x86_64 x86_64 GNU/Linux
+bzImage: /home/natalie/build-cbpf/arch/x86/boot/bzImage
+
+=== F-1 test ===
+F-1 io_uring CONNECT IPv6 addr_len test
+listener [::1]:45105  htons(P)=0x31b0  filter-observed-port-word @len28 should be 0x31b0
+BUILD=rev2
+RAW: res_P28=-13 res_P24=-13 res_0_28=0 res_0_24=0  (-EACCES=-13)
+
+  filter       addr_len=28                 addr_len=24
+  deny_on_P    DENIED (res=-EACCES)        DENIED (res=-EACCES)
+  deny_on_0    CONNECTED (res=0)           CONNECTED (res=0)
+
+Observed connect.port the filter saw:
+  at addr_len=28: 0x31b0 (== htons(P)) -- port populated
+  at addr_len=24: ambiguous (P-probe=DENIED (res=-EACCES), 0-probe=CONNECTED (res=0))
+
+VERDICT: REFUTED -- filter denied at both lengths; port appears populated at addr_len=24
+program-exit=1
