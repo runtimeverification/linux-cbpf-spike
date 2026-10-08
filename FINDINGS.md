@@ -7,10 +7,11 @@ kernel in Phase 2.
 
 ---
 
-## F-1 — io_uring CONNECT filter is blind to the IPv6 port and address when 24 <= addr_len < 28  [UNCONFIRMED]
+## F-1 — io_uring CONNECT filter is blind to the IPv6 port and address when 24 <= addr_len < 28  [CONFIRMED]
 
-Status: `[UNCONFIRMED]` — reached by reasoning across io_uring/net.c and net/ipv6/*;
-`[NEEDS EMPIRICAL CHECK]` against `~/build-cbpf` (Phase 2, hypothesis H1). Not reproduced yet.
+Status: `[CONFIRMED against the compiled C of this tree]` — reproduced in a virtme-ng VM
+on 2026-10-08; see "Confirmation (Phase 2)" below. Originally reached by reasoning across
+io_uring/net.c and net/ipv6/*; now empirically verified against the built kernel.
 Class: policy bypass (a CONNECT restriction filter is evaded), not memory unsafety.
 
 ### Mechanism
@@ -64,6 +65,46 @@ If an io_uring CONNECT filter is a sandbox's egress control, a sandboxed task ca
 otherwise-blocked IPv6 host or port by issuing the connect with `addr_len = 24` instead of 28.
 No elevated privilege is needed, and the ring-level registration path itself requires none
 (register.c:962-971). This is a filter-policy escape, not kernel memory corruption.
+
+### Confirmation (Phase 2) — [CONFIRMED]
+
+Reproduced against the compiled C of this tree, inside a virtme-ng VM (host was only the
+hypervisor; the test ran on the target kernel, never the host).
+
+- Kernel under test: `7.3.0-rc6-00063-g0c2669a9f4a1` (`uname -r` in the guest), booting
+  `~/build-cbpf/arch/x86/boot/bzImage`. Host kernel 6.8.0-138-generic ran QEMU only.
+- Reproducer: `repro/f1_connect_v6.c` (raw io_uring syscalls against the tree UAPI, no
+  liburing); launcher `repro/run.sh`; guest runner `repro/vm_run.sh`. Loopback `[::1]` only.
+- Commands:
+  ```sh
+  gcc -O1 -Wall -Wextra -Wno-cpp -D__user= -I repro/stub \
+      -I ~/linux-cbpf/include/uapi -I ~/linux-cbpf/arch/x86/include/uapi \
+      -o repro/f1_connect_v6 repro/f1_connect_v6.c
+  vng --run ~/build-cbpf/arch/x86/boot/bzImage --exec ~/linux-cbpf-spike/repro/vm_run.sh
+  ```
+- Ring-level filter registration (`IORING_REGISTER_BPF_FILTER`, fd != -1) succeeded with no
+  privilege, as predicted.
+
+Result for listener `[::1]:37439`, `htons(P) = 0x3f92`; raw CQE results
+`res_P28 = -EACCES, res_P24 = 0, res_0_28 = 0, res_0_24 = -EACCES`:
+
+| filter (deny iff ...)          | addr_len = 28       | addr_len = 24       |
+|--------------------------------|---------------------|---------------------|
+| `family==AF_INET6 && port==P`  | DENIED (`-EACCES`)  | CONNECTED (`res=0`) |
+| `family==AF_INET6 && port==0`  | CONNECTED (`res=0`) | DENIED (`-EACCES`)  |
+
+Port the filter observed: `0x3f92` (== `htons(P)`) at `addr_len = 28`; `0x0000` at
+`addr_len = 24`. VERDICT: **CONFIRMED** — the port-deny CONNECT filter is bypassed at
+`addr_len = 24`: the connect to the blocked destination completes (`res=0`), while the
+identical request at `addr_len = 28` is denied. The `deny_on_0` cross-probe independently
+confirms the observed port was the real port at length 28 and zero at length 24, so the
+bypass is specifically the un-populated port/address field, not some other effect.
+
+Harness note: an early displayed matrix was wrong due to a cosmetic bug in the reporting path
+(two `%s` sharing one `static` buffer, then a `sizeof(pointer)` truncation); the underlying
+raw-integer verdict was stable across every run and is printed verbatim on the `RAW:` line.
+Both display bugs are fixed in the committed reproducer; the `BUILD=rev2` tag marks the fixed
+binary.
 
 ### Suggested fix direction (for Phase 2, not applied here)
 

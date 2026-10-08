@@ -24,8 +24,9 @@ Consequence: with `addr_len = 24` the filter sees `family = AF_INET6, port = 0, 
 real destination. Any CONNECT filter that denies by IPv6 port or address is bypassed.
 The IPv4 thresholds agree (populate 16 = `sizeof(sockaddr_in)`; net/ipv4/tcp_ipv4.c:212,
 net/ipv4/datagram.c:30, net/ipv4/raw.c:719) so IPv4 is not affected.
-[NEEDS EMPIRICAL CHECK: spans io_uring/net.c and net/ipv6/*]. Recorded as FINDINGS.md F-1
-[UNCONFIRMED]; see that file for the test procedure.
+[NEEDS EMPIRICAL CHECK: spans io_uring/net.c and net/ipv6/*]. Recorded as FINDINGS.md F-1.
+**CONFIRMED in Phase 2** (2026-10-08) against `7.3.0-rc6-00063-g0c2669a9f4a1` in a
+virtme-ng VM; reproducer `repro/f1_connect_v6.c`. See FINDINGS.md F-1 "Confirmation".
 
 ## 2. H2 — context-semantics footguns in the io_uring populate hooks  (L: medium, I: medium)
 
