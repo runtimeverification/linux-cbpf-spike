@@ -56,6 +56,63 @@ Test: Phase 1 Rust models of both the emulator and the cBPF interpreter; differe
 (random programs in the subset plus random noise insns); then the C emulator extracted into
 a userspace harness; then VM confirmation of the resulting syscall behaviour.
 
+### H3 VERDICT: REFUTED — no over-allow beyond the intentional uprobe passthrough  [VERIFIED: fuzz + VM]
+
+Method (`repro/h3_const_allow_fuzz.c`, built by `repro/h3_build.sh`): the kernel's own
+`seccomp_is_const_allow`, `seccomp_uprobe_exception`, `seccomp_check_filter`,
+`bpf_check_classic`, `chk_code_allowed`, `check_load_and_stores` and `bpf_anc_helper` are
+extracted VERBATIM from `~/linux-cbpf` at build time and compiled in userspace. Programs are
+admitted exactly as the kernel admits them (classic check, then the seccomp rewrite on a
+copy); the emulator runs on the original bytes and a reference cBPF interpreter runs the
+rewritten bytes, as `bpf_prog_create_from_user()` does. Oracle: for every (program, arch, nr)
+the emulator marks constant-allow, the interpreter must return action `SECCOMP_RET_ALLOW`
+for every `seccomp_data` with that (arch, nr) (random args and ip). Pure userspace, no
+kernel interaction. Self-tests include a positive control (a deny-everything filter) that
+the oracle must flag for exactly nr 335/336 on x86_64.
+
+| run | seed | programs admitted | (prog,arch,nr) emulated | reference runs | REAL divergences | intentional (uprobe) | anomalies / WARN_ON |
+|---|---|---|---|---|---|---|---|
+| 1 (T=32) | 1 | 196,469 | 201,184,256 | 1,323,149,109 | 0 | 250,954 | 0 / 0 |
+| 2 (T=16) | 2 | 982,580 | 1,006,161,920 | 3,329,956,848 | 0 | 1,255,595 | 0 / 0 |
+| 3 (T=64) | 3 | 294,773 | 301,847,552 | 3,949,308,318 | 0 | 377,178 | 0 / 0 |
+
+Program mix: 50% filter-like (arch check, nr allowlists with JEQ/JGE/JGT/JSET, AND masks,
+JA, optional args-dependent branch, RET variants incl. ALLOW|data) and 50% random soup over
+the full admitted opcode set (ALU K/X, scratch ST/LD, TAX/TXA, RET A, LEN). Rejection rate
+about 1.7%. The emulator also under-caches in the safe direction (about 20% of sampled
+non-cached (arch, nr) were in fact always-allow): incompleteness, not a bug.
+
+The single divergence class is `seccomp_uprobe_exception()` (kernel/seccomp.c:744-762,
+commit 89d1d8434d24 "seccomp: passthrough uprobe systemcall without filtering"): for
+x86_64 nr 335 (uretprobe) and 336 (uprobe) the emulator returns true without reading the
+filter, so the cache allows them whatever the filter says. Intentional and public; not a
+finding.
+
+VM confirmation (`repro/h3_uprobe_passthrough.c` via `repro/h3_run.sh`; log
+`repro/h3_run.log`), kernel `7.3.0-rc6-00063-g0c2669a9f4a1-dirty` = build #2 of 2026-10-08
+15:42 (0c2669a9f4a1 plus the then-uncommitted F-1 fix to io_uring/net.c; kernel/seccomp.c
+and net/core/filter.c unmodified), host 6.8 as hypervisor only:
+- T1  filter denies uprobe(336) with ERRNO(EPERM): `syscall(336) -> -1 errno=71 (EPROTO)`.
+  The syscall executed (sys_uprobe's own out-of-trampoline error): bypassed by the cache.
+  [VERIFIED: run]
+- T1b filter denies uretprobe(335): child killed by SIGILL (sys_uretprobe's own
+  out-of-trampoline path): bypassed. [VERIFIED: run]
+- T2  filter denies getpid(39): `syscall(39) -> -1 errno=1 (EPERM)`: enforced; the cache
+  did not over-allow an ordinary syscall. [VERIFIED: run]
+- T3  same filter, getppid(110) on the constant-allow path: returned 252. [VERIFIED: run]
+
+Why no divergence is expected (proof target for Phase 4; UNVERIFIED as a proof): the
+emulated path depends only on nr, arch and constants; each modelled instruction has the
+same semantics as the converted program (32-bit unsigned compares; `pc += jt|jf|k` then
+`pc++` equals `pc + 1 + off`; AND|K; exact `RET|K == SECCOMP_RET_ALLOW`); A starts at 0 as
+the eBPF prologue guarantees; the emulator reads orig_prog saved before the rewrite; the
+runtime lookup consults the bitmap only for the same (arch, nr) with `0 <= nr < NR_syscalls`.
+Bounded fuzzing cannot prove absence; the Lean theorem is what closes H3.
+
+Threat-model note: on x86_64 a seccomp filter cannot deny uprobe/uretprobe; direct calls
+outside a trampoline yield EPROTO / SIGILL and confer no capability. Documented upstream
+behaviour, recorded for the sandbox spec.
+
 ## 4. H4 — check_load_and_stores admits a read of a never-written scratch cell  (L: low, I: high)
 
 filter.c:935-986. The converted load reads the eBPF stack slot `FP-(4k+4)` (filter.c:855-858);

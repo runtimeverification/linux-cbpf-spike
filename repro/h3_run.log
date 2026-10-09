@@ -1,0 +1,22 @@
+=== VM kernel (target) ===
+7.3.0-rc6-00063-g0c2669a9f4a1-dirty
+Linux virtme-ng 7.3.0-rc6-00063-g0c2669a9f4a1-dirty #2 SMP PREEMPT_DYNAMIC Thu Oct  8 15:42:19 MSK 2026 x86_64 x86_64 x86_64 GNU/Linux
+bzImage: /home/natalie/build-cbpf/arch/x86/boot/bzImage
+
+=== H3 witness ===
+H3 VM witness: seccomp allow-cache vs installed filter
+
+[T1 deny-uprobe] syscall(336) -> -1 errno=71 (Protocol error)
+  T1: BYPASSED: syscall executed despite filter (cache passthrough) -- as predicted, intentional  (child exit 10 sig 0)
+
+  T1b: BYPASSED: syscall executed (SIGILL from sys_uretprobe) despite filter -- intentional passthrough  (child exit -1 sig 4)
+
+[T2 deny-getpid] syscall(39) -> -1 errno=1 (Operation not permitted)
+  T2: ENFORCED: getpid denied with EPERM -- cache did not over-allow  (child exit 11 sig 0)
+
+[T3 allow-getppid] syscall(110) -> 252 errno=0 (-)
+  T3: ALLOWED: getppid succeeded (const-allow path works)  (child exit 12 sig 0)
+
+SUMMARY: 4 expected outcomes, 0 unexpected
+VERDICT: the only cache-vs-filter divergence is the intentional uprobe/uretprobe passthrough; ordinary syscalls are enforced
+program-exit=0
