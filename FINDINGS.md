@@ -142,3 +142,7 @@ two thresholds can be driven apart by a chosen `addr_len` is multi-file reasonin
 therefore `[UNCONFIRMED]` until step 5 above runs green against the compiled C. The previous
 spike's multi-file hit rate was poor; treat F-1 as a hypothesis with a strong paper trail, not
 a settled bug.
+
+## Disclosure
+
+Reported to security@kernel.org on 2026-10-09 10:18 +0300, cc axboe@kernel.dk. Message-Id 20261009071817.159261-1-natalie.klaus@runtimeverification.com. Patch and reproducer sent in the same thread.
