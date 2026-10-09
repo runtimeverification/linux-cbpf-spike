@@ -1,0 +1,26 @@
+io_uring/net: populate CONNECT filter fields for 24-byte sockaddr_in6
+
+io_connect_bpf_populate() fills connect.port and connect.v6_addr for
+AF_INET6 only when addr_len >= sizeof(struct sockaddr_in6), i.e. 28
+bytes.
+
+The IPv6 connect paths accept SIN6_LEN_RFC2133 (24 bytes), which
+already holds sin6_port and sin6_addr. io_connect() passes addr_len to
+the socket layer unchanged.
+
+At addr_len 24 the filter sees family AF_INET6 with port and address
+zero, while the kernel connects to the real destination. A filter that
+denies an IPv6 port or address is bypassed. Denying connect.port == P
+rejects [::1]:P with -EACCES at addr_len 28 but connects at addr_len 24.
+
+Use SIN6_LEN_RFC2133 as the threshold. sin6_scope_id stays zero when
+absent.
+
+The threshold mismatch was found by an AI coding assistant (Claude Code)
+comparing this hook against the net/ipv6 length checks on my
+instructions; it also drafted the reproducer and this patch. I verified
+the bypass and the fix in a VM on 7.3-rc6 and that 7.2 has the same
+code.
+
+Fixes: 899bea8248ce ("io_uring/net: allow filtering on IORING_OP_CONNECT")
+Cc: stable@vger.kernel.org # 7.2

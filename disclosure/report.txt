@@ -1,0 +1,38 @@
+Subject: io_uring: IPv6 CONNECT BPF filter bypass with 24-byte sockaddr_in6
+
+Hi,
+
+io_uring's CONNECT BPF filter can be bypassed for IPv6 destinations.
+io_connect_bpf_populate() in io_uring/net.c fills connect.port and
+connect.v6_addr only for addr_len >= 28, but the IPv6 connect paths
+accept 24. At addr_len 24 the filter sees port and address zero while
+the kernel connects to the real destination, so a filter denying an
+IPv6 port or address is bypassed. No capability is needed.
+
+Affected: introduced by 899bea8248ce ("io_uring/net: allow filtering on
+IORING_OP_CONNECT"), first in v7.2-rc1. Present in released v7.2
+(8d3ae59288f1) and unchanged at mainline 0c2669a9f4a1
+(v7.3-rc6-63-g0c2669a9f4a1); the function is untouched since
+899bea8248ce. IPv4 is not affected, its threshold matches the stack's.
+
+To reproduce: register a ring-level CONNECT filter that denies
+connect.family == AF_INET6 && connect.port == P, then submit
+IORING_OP_CONNECT to a listener on [::1]:P with addr_len 28 and again
+with addr_len 24. The first fails with -EACCES, the second connects.
+Reproducer attached; tested on 0c2669a9f4a1 in a VM.
+
+Fix: use SIN6_LEN_RFC2133 (24) as the threshold instead of
+sizeof(struct sockaddr_in6). Tested with the reproducer: the filter
+then sees the real port at both lengths. Patch below.
+
+The mismatch was found with an AI coding assistant during a review of
+the io_uring and seccomp cBPF validators; the commit message below has
+the details.
+
+I have not posted this anywhere and will follow whatever disclosure
+timeline you prefer. Happy to resend the patch to the io-uring list once
+you say it is public.
+
+Thanks,
+Natasha Klaus
+Runtime Verification
