@@ -148,3 +148,5 @@ a settled bug.
 Reported to security@kernel.org on 2026-10-09 10:18 +0300, cc axboe@kernel.dk. Message-Id 20261009071817.159261-1-natalie.klaus@runtimeverification.com. Patch and reproducer sent in the same thread.
 
 Maintainer reply 2026-10-09 15:58 MSK: no embargo, send to the list. Posted to io-uring@vger.kernel.org 2026-10-09 16:38 MSK: https://lore.kernel.org/io-uring/20261009133807.730724-1-natalie.klaus@runtimeverification.com/
+
+Applied by Jens Axboe 2026-10-09 17:33 MSK, upstream commit aa5d5f8e502318e783545ba5d04bb40130b83e20 (mainline). Queued for stable 7.2.y by Greg KH 2026-10-12.
