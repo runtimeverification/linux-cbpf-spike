@@ -2,3 +2,5 @@ f1_connect_v6
 h3_const_allow_fuzz
 h3_uprobe_passthrough
 h3_kernel_extract.h
+h4_mem_init_fuzz
+h4_vm_witness

@@ -126,6 +126,65 @@ run before :1151). This is a long-standing shared check; the interest here is pr
 expecting a break. Test: Rust model plus an independent all-paths oracle; differential fuzz
 against the C; Lean theorem in Phase 4.
 
+### H4 VERDICT: REFUTED — no admitted program reads an unwritten scratch cell  [VERIFIED: fuzz + VM]
+
+Method (`repro/h4_mem_init_fuzz.c`, built by `repro/h4_build.sh` from the same verbatim
+extract as H3): three oracles per generated program. (A) An independent exact must-write
+dataflow with reachability over the forward-jump DAG: SAFE iff every reachable `LD|MEM` /
+`LDX|MEM` reads a cell written on every path from entry. (B) An execution oracle that runs
+the admitted, rewritten program on random `seccomp_data` with per-cell initialised tracking
+and poison values; any read of an uninitialised cell on an executed path is a real leak.
+(C) Incompleteness in the safe direction (kernel rejects, reference SAFE). Programs are
+memory-dense and deliberately NOT write-tracked at generation (75% random soup, 25%
+diamonds with stores on one/both/neither branch, dead stores after RET, loads at the
+join), all structurally valid so `check_load_and_stores` can be called directly and its
+verdict cross-checked against `bpf_check_classic`. Pure userspace.
+
+| run | seed | programs | kernel accepted | reference safe / unsafe | (A) accepted-but-unsafe | (B) uninit read in execution | executions | (C) rejected-but-safe |
+|---|---|---|---|---|---|---|---|---|
+| 1 (T=64) | 11 | 500,000 | 104,149 | 173,394 / 326,606 | 0 | 0 | 6,665,536 | 69,245 |
+| 2 (T=64) | 12 | 20,000,000 | 4,180,801 | 6,948,622 / 13,051,378 | 0 | 0 | 267,571,264 | 2,767,821 |
+| 3 (T=256) | 13 | 10,000,000 | 2,089,761 | 3,472,226 / 6,527,774 | 0 | 0 | 534,978,816 | 1,382,465 |
+| total | | 30,500,000 | 6,374,711 | 10,594,242 / 19,905,758 | **0** | **0** | 809,215,616 | 4,219,531 |
+
+Consistency: every reference-unsafe program (19,905,758) was rejected by the kernel; every
+kernel-accepted program is reference-safe (accepted + rejected-but-safe = reference safe,
+exactly); `bpf_check_classic` and a direct `check_load_and_stores` call never disagreed;
+zero interpreter anomalies and zero `WARN_ON` hits. Self-tests pass, including the unsafe
+diamond and dead-store cases (rejected by both) and the safe both-branch store (accepted).
+
+Incompleteness (safe direction, ~40% of safe programs in this adversarial mix): after a
+`RET` the kernel carries that path's `memvalid` into the next instruction as if it fell
+through (filter.c:948-981 has no RET case), so (i) a join reached only by jumps from
+stores but textually preceded by a poorer RET path is rejected, and (ii) dead loads after
+a RET are rejected. Conservative, never unsafe. Witness: `repro/h4_vm_witness.c` W3.
+
+VM confirmation (`repro/h4_vm_witness.c` via `repro/h4_run.sh`, log `repro/h4_run.log`),
+kernel `7.3.0-rc6-00063-g0c2669a9f4a1-dirty` (build #2 of 2026-10-08 15:42; seccomp.c and
+net/core/filter.c identical to the pinned commit), host 6.8 as hypervisor only:
+- W1 unsafe diamond (store on one branch, load at join): `seccomp(2)` -> `EINVAL`. [VERIFIED: run]
+- W2 safe, both branches store distinct `ERRNO|data` values, `RET A`: accepted; `getpid`
+  -> `errno=291 (0x123)`, `getppid` -> `errno=1110 (0x456)`. The `RET A` channel does carry
+  scratch contents to userspace, deterministically: this is the channel a leak would use.
+  [VERIFIED: run]
+- W3 safe but phantom-after-RET: `EINVAL` (kernel conservative; matches the extract). [VERIFIED: run]
+- W4 store only in dead code, load after: `EINVAL`. [VERIFIED: run]
+
+Why no divergence is expected (proof target for Phase 4; UNVERIFIED as a proof): the
+analysis is a forward meet-over-paths on a DAG; at every pc it ANDs the fall-through
+contribution with `masks[pc]`, the AND of `memvalid` at every jump that targets pc; every
+real predecessor edge is included (jumps record into `masks`, fall-through carries
+`memvalid`, and a jump's own fall-through is replaced by `~0` because a jump never falls
+through), so the computed set is a subset of the cells written on every real path; stores
+add exactly the stored cell; `k < 16` and target bounds are enforced earlier in
+`bpf_check_classic`. The phantom RET fall-through only shrinks the set. Bounded fuzzing
+cannot prove absence; the Lean theorem closes it.
+
+Harness note: the first VM run's W2 filter had no ALLOW default, so the child's own
+`write`/`exit_group` were answered with `-ERRNO` and glibc's `_exit` abort trap killed it
+before reporting (kernel behaviour correct; witness bug). Fixed by routing only
+getpid/getppid through `RET A`; re-run is the record above.
+
 ## 5. H5 — context-load bound arithmetic  (L: none at this commit, I: high)
 
 `k < sizeof && (k & 3) == 0` implies `k + 4 <= sizeof` only if `sizeof % 4 == 0`. Holds:

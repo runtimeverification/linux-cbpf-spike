@@ -1,0 +1,27 @@
+# exact command:
+vng --run /home/natalie/build-cbpf/arch/x86/boot/bzImage --exec /home/natalie/linux-cbpf-spike/repro/h4_vm_run.sh
+
+WARNING: stdin/stdout/stderr not accessible via /proc/self/fd, falling back to limited redirection (stderr may be lost).
+If full redirection is needed, run vng with: 
+script -q -c 'vng -- <command>'
+(or use tmux/screen)
+=== VM kernel (target) ===
+7.3.0-rc6-00063-g0c2669a9f4a1-dirty
+Linux virtme-ng 7.3.0-rc6-00063-g0c2669a9f4a1-dirty #2 SMP PREEMPT_DYNAMIC Thu Oct  8 15:42:19 MSK 2026 x86_64 x86_64 x86_64 GNU/Linux
+bzImage: /home/natalie/build-cbpf/arch/x86/boot/bzImage
+
+=== H4 witness ===
+H4 VM witness: scratch-memory admission + RET A channel
+[W1 unsafe-diamond] install -> Invalid argument
+  W1 unsafe-diamond: as expected (child exit 20)
+[W2 safe-both-store] install -> accepted
+[W2 safe-both-store] getpid  -> -1 errno=291 (expect 291 = 0x123)
+[W2 safe-both-store] getppid -> -1 errno=1110 (expect 1110 = 0x456)
+  W2 safe-both-store: as expected (child exit 30)
+[W3 safe-phantom-reject] install -> Invalid argument
+  W3 safe-phantom-reject: as expected (child exit 20)
+[W4 dead-store] install -> Invalid argument
+  W4 dead-store: as expected (child exit 20)
+SUMMARY: 4 expected, 0 unexpected
+VERDICT: kernel admission matches the extract (unsafe/dead-store rejected, both-store accepted, phantom case conservatively rejected); RET A carries scratch contents (channel real, values deterministic)
+program-exit=0
